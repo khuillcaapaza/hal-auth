@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import type { LoginChallenge, Mensaje } from "@/lib/types";
+import { useState, type FormEvent } from "react";
+import type { LoginChallenge } from "@/lib/types";
 
 interface Props {
   onLogin: (email: string, password: string) => Promise<void>;
@@ -11,121 +11,146 @@ interface Props {
   error: string | null;
 }
 
+type Paso = "credenciales" | "codigo";
+
 export default function LoginView({ onLogin, onVerify, challenge, cargando, error }: Props) {
+  const [paso, setPaso]         = useState<Paso>("credenciales");
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [codigo, setCodigo]     = useState(challenge?.dev_codigo ?? "");
+  const [mensaje, setMensaje]   = useState<{ texto: string; tipo?: "error" | "ok" }>({ texto: "" });
 
-  // Autocompletar código en modo dev
-  if (challenge?.dev_codigo && codigo === "" ) {
-    setCodigo(challenge.dev_codigo);
+  // Cuando llega el challenge, avanzar al paso código
+  if (challenge && paso === "credenciales") {
+    setPaso("codigo");
+    setPassword("");
+    setCodigo(challenge.dev_codigo ?? "");
+    setMensaje({ texto: challenge.mensaje ?? "Te enviamos un código a tu correo.", tipo: "ok" });
   }
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    await onLogin(email.trim(), password);
+  // Propagar error externo
+  if (error && mensaje.tipo !== "error") {
+    setMensaje({ texto: error, tipo: "error" });
   }
 
-  async function handleVerify(e: React.FormEvent) {
+  async function onSubmitCredenciales(e: FormEvent) {
     e.preventDefault();
-    if (!challenge) return;
-    await onVerify(challenge.email, codigo.trim());
+    const correo = email.trim().toLowerCase();
+    if (!correo || !password) {
+      setMensaje({ texto: "Ingresa tu email y contraseña.", tipo: "error" });
+      return;
+    }
+    setMensaje({ texto: "Verificando…" });
+    try {
+      await onLogin(correo, password);
+    } catch (err) {
+      setMensaje({ texto: (err as Error).message, tipo: "error" });
+    }
+  }
+
+  async function onSubmitCodigo(e: FormEvent) {
+    e.preventDefault();
+    const cod = codigo.replace(/\D/g, "");
+    if (cod.length !== 6) {
+      setMensaje({ texto: "Ingresa el código de 6 dígitos.", tipo: "error" });
+      return;
+    }
+    // Usar el email que devolvió el servidor en el challenge (más fiable que el estado local).
+    const emailVerify = challenge?.email || email.trim().toLowerCase();
+    setMensaje({ texto: "Validando código…" });
+    try {
+      await onVerify(emailVerify, cod);
+    } catch (err) {
+      setMensaje({ texto: (err as Error).message, tipo: "error" });
+    }
+  }
+
+  function volver() {
+    setPaso("credenciales");
+    setCodigo("");
+    setMensaje({ texto: "" });
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
-        {/* Logo / Cabecera */}
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-green-700 rounded-full mx-auto mb-4 flex items-center justify-center">
-            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Sistema HAL</h1>
-          <p className="text-gray-500 text-sm mt-1">Hospital Antonio Lorena del Cusco</p>
-        </div>
+    <div className="shell--login">
+      <main className="card">
+        <h1 className="titulo">Sistema HAL</h1>
+        <p className="subtitulo">Hospital Antonio Lorena del Cusco</p>
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-            {error}
-          </div>
-        )}
-
-        {!challenge ? (
-          // Paso 1: Email + Contraseña
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Correo institucional</label>
+        {paso === "credenciales" ? (
+          <form onSubmit={onSubmitCredenciales} autoComplete="off" noValidate>
+            <label className="campo">
+              <span>Correo institucional</span>
               <input
                 type="email"
+                name="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                autoComplete="email"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                autoFocus
+                autoComplete="username"
                 placeholder="usuario@hospital.gob.pe"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+            </label>
+            <label className="campo">
+              <span>Contraseña</span>
               <input
                 type="password"
+                name="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
               />
-            </div>
-            <button
-              type="submit"
-              disabled={cargando}
-              className="w-full bg-green-700 text-white py-2.5 rounded-lg font-semibold hover:bg-green-800 disabled:opacity-50 transition-colors"
-            >
+            </label>
+            <button type="submit" className="boton" disabled={cargando}>
               {cargando ? "Verificando…" : "Ingresar"}
             </button>
+            <p className={"mensaje" + (mensaje.tipo ? " mensaje--" + mensaje.tipo : "")} role="alert">
+              {mensaje.texto}
+            </p>
           </form>
         ) : (
-          // Paso 2: Código 2FA
-          <form onSubmit={handleVerify} className="space-y-4">
-            <div className="text-center text-sm text-gray-600 mb-4">
-              <p>{challenge.mensaje}</p>
-              <p className="font-medium mt-1">{challenge.email}</p>
-              {challenge.dev_codigo && (
-                <p className="mt-2 text-xs bg-yellow-50 border border-yellow-200 rounded px-2 py-1 text-yellow-800">
-                  Dev · código: <strong>{challenge.dev_codigo}</strong>
-                </p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Código de verificación
-              </label>
+          <form onSubmit={onSubmitCodigo} autoComplete="off" noValidate>
+            <p className="subtitulo">
+              Ingresa el código de 6 dígitos que enviamos a<br />
+              <strong>{email.trim().toLowerCase()}</strong>
+            </p>
+            {challenge?.dev_codigo && (
+              <p className="mensaje mensaje--ok" style={{ marginBottom: "0.75rem" }}>
+                Dev · código: <strong>{challenge.dev_codigo}</strong>
+              </p>
+            )}
+            <label className="campo">
+              <span>Código de verificación</span>
               <input
                 type="text"
+                name="codigo"
                 inputMode="numeric"
-                pattern="[0-9]{6}"
+                pattern="[0-9]*"
                 maxLength={6}
                 value={codigo}
                 onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ""))}
                 required
                 autoFocus
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center tracking-widest text-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                placeholder="000000"
+                autoComplete="one-time-code"
+                style={{ textAlign: "center", letterSpacing: "0.3em", fontSize: "1.3rem" }}
               />
-            </div>
-            <button
-              type="submit"
-              disabled={cargando || codigo.length !== 6}
-              className="w-full bg-green-700 text-white py-2.5 rounded-lg font-semibold hover:bg-green-800 disabled:opacity-50 transition-colors"
-            >
-              {cargando ? "Verificando…" : "Confirmar acceso"}
+            </label>
+            <button type="submit" className="boton" disabled={cargando || codigo.length !== 6}>
+              {cargando ? "Validando…" : "Entrar"}
             </button>
+            <button type="button" className="boton boton--secundario" onClick={volver} disabled={cargando}>
+              Volver
+            </button>
+            <p className={"mensaje" + (mensaje.tipo ? " mensaje--" + mensaje.tipo : "")} role="alert">
+              {mensaje.texto}
+            </p>
           </form>
         )}
-      </div>
+      </main>
     </div>
   );
 }
+
+
