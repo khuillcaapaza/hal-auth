@@ -1,0 +1,80 @@
+name: Deploy auth portal (hal-auth)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-auth
+  cancel-in-progress: false
+
+env:
+  REMOTE_DOMAIN_DIR: web/auth.hospitalantoniolorena.gob.pe
+  # La API vive en el mismo subdominio, bajo /api
+  NEXT_PUBLIC_AUTH_API_BASE: /api
+  # Cookie SSO compartida en todos los subdominios del dominio principal
+  NEXT_PUBLIC_COOKIE_DOMAIN: .hospitalantoniolorena.gob.pe
+  # URLs de producción de cada módulo
+  NEXT_PUBLIC_URL_CITAS: https://citas.hospitalantoniolorena.gob.pe
+  NEXT_PUBLIC_URL_NOTICIAS: https://noticias.hospitalantoniolorena.gob.pe
+  NEXT_PUBLIC_URL_CONVOCATORIAS: https://convocatorias.hospitalantoniolorena.gob.pe
+
+jobs:
+  deploy:
+    # No tiene test suite propia aún; se despliega directamente.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Construir (exportación estática)
+        run: npm run build
+
+      - name: Instalar lftp
+        run: sudo apt-get update && sudo apt-get install -y lftp
+
+      - name: Configurar clave SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+
+      - name: Desplegar out/ por SFTP
+        # La carpeta /api es servida por hal-auth-api y no debe borrarse.
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          KEY="$HOME/.ssh/id_deploy"
+          SSH="ssh -a -x -i $KEY -p $DEPLOY_PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+          lftp -e "
+            set sftp:connect-program '$SSH';
+            set sftp:auto-confirm yes;
+            set net:max-retries 5;
+            set net:persist-retries 10;
+            set net:timeout 30;
+            set xfer:clobber on;
+            set mirror:parallel-transfer-count 1;
+            open -u $DEPLOY_USER, sftp://$DEPLOY_HOST;
+            mkdir -p -f $REMOTE_DOMAIN_DIR/public_html;
+            mirror -R --no-perms --verbose ./out/_next/ $REMOTE_DOMAIN_DIR/public_html/_next;
+            mirror -R --delete --no-perms --verbose --exclude api/ --exclude _next/ ./out/ $REMOTE_DOMAIN_DIR/public_html;
+            bye
+          "
+
+      - name: Limpiar clave SSH
+        if: always()
+        run: rm -f ~/.ssh/id_deploy
