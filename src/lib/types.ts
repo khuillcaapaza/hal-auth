@@ -1,5 +1,5 @@
 // ── Módulos disponibles ────────────────────────────────────────────────
-export type Modulo = "citas" | "noticias" | "convocatorias";
+export type Modulo = "citas" | "noticias" | "convocatorias" | "servicios";
 
 export const MODULOS: Record<Modulo, { label: string; descripcion: string; color: string; url: string }> = {
   citas: {
@@ -19,6 +19,12 @@ export const MODULOS: Record<Modulo, { label: string; descripcion: string; color
     descripcion: "Administración de convocatorias laborales",
     color: "from-amber-500 to-amber-700",
     url: process.env.NEXT_PUBLIC_URL_CONVOCATORIAS || "https://convocatorias.hospitalantoniolorena.gob.pe",
+  },
+  servicios: {
+    label: "Servicios",
+    descripcion: "Portal de servicios en línea y documentos de gestión",
+    color: "from-teal-500 to-teal-700",
+    url: process.env.NEXT_PUBLIC_URL_SERVICIOS || "https://servicios.hospitalantoniolorena.gob.pe",
   },
 };
 
