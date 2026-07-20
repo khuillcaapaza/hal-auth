@@ -2,6 +2,8 @@
 
 import type { Modulo, Usuario } from "@/lib/types";
 import { MODULOS } from "@/lib/types";
+import { getToken } from "@/lib/api";
+import { setAuthCookie } from "@/lib/cookie";
 
 interface Props {
   usuario: Usuario;
@@ -10,8 +12,33 @@ interface Props {
 }
 
 export default function Dashboard({ usuario, onLogout, onAdmin }: Props) {
+  function resolverUrlModulo(modulo: Modulo): string {
+    const configured = MODULOS[modulo].url;
+    if (typeof window === "undefined") return configured;
+
+    const isLocal = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+    if (!isLocal) return configured;
+
+    const localPorts: Record<Modulo, number> = {
+      citas: 3001,
+      noticias: 3002,
+      convocatorias: 3003,
+      servicios: 3006,
+    };
+
+    // En desarrollo local forzamos localhost para mantener consistencia con
+    // el dominio de la cookie SSO y evitar redirecciones falsas a login.
+    return `${window.location.protocol}//localhost:${localPorts[modulo]}`;
+
+  }
+
   function abrirModulo(modulo: Modulo) {
-    window.open(MODULOS[modulo].url, "_blank", "noopener");
+    const token = getToken();
+    if (token) {
+      // Refresca la cookie SSO justo antes de abrir el módulo.
+      setAuthCookie(token);
+    }
+    window.open(resolverUrlModulo(modulo), "_blank", "noopener");
   }
 
   const esAdmin = usuario.rol === "admin" || usuario.es_superadmin;

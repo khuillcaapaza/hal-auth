@@ -16,14 +16,21 @@ export function setAuthCookie(token: string): void {
   if (typeof document === "undefined") return;
   const secure = COOKIE_DOMAIN !== "localhost";
   const sameSite = secure ? "Lax" : "Lax";
-  document.cookie = [
+  const cookieParts = [
     `${COOKIE_NAME}=${encodeURIComponent(token)}`,
-    `domain=${COOKIE_DOMAIN}`,
     `path=/`,
     `max-age=${COOKIE_TTL}`,
     sameSite ? `samesite=${sameSite}` : "",
     secure ? "secure" : "",
-  ]
+  ];
+
+  // En localhost evitamos el atributo domain: algunos navegadores lo rechazan
+  // y no persisten la cookie, rompiendo el SSO entre puertos locales.
+  if (COOKIE_DOMAIN !== "localhost") {
+    cookieParts.push(`domain=${COOKIE_DOMAIN}`);
+  }
+
+  document.cookie = cookieParts
     .filter(Boolean)
     .join("; ");
 }
@@ -40,8 +47,11 @@ export function getAuthCookie(): string | null {
 /** Elimina la cookie de todos los dominios posibles. */
 export function clearAuthCookie(): void {
   if (typeof document === "undefined") return;
-  const expired = `${COOKIE_NAME}=; domain=${COOKIE_DOMAIN}; path=/; max-age=0`;
-  document.cookie = expired;
+  // Limpia cookie host-only (localhost) y con dominio explícito (producción).
+  document.cookie = `${COOKIE_NAME}=; path=/; max-age=0`;
+  if (COOKIE_DOMAIN !== "localhost") {
+    document.cookie = `${COOKIE_NAME}=; domain=${COOKIE_DOMAIN}; path=/; max-age=0`;
+  }
   // También intenta limpiar en localhost (desarrollo).
   document.cookie = `${COOKIE_NAME}=; domain=localhost; path=/; max-age=0`;
 }

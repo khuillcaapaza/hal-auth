@@ -19,11 +19,21 @@ export function useAuth() {
   useEffect(() => {
     const cookie = getAuthCookie();
     const session = getToken();
-    const token = cookie && isTokenValid(cookie) ? cookie : session && isTokenValid(session) ? session : null;
+    const cookieValida = cookie && isTokenValid(cookie) ? cookie : null;
+    const sessionValida = session && isTokenValid(session) ? session : null;
+    const token = cookieValida ?? sessionValida;
 
     if (!token) {
       setState({ fase: "idle" });
       return;
+    }
+
+    // Sincroniza ambos almacenes para evitar falsos 401 al abrir pestañas nuevas.
+    if (cookieValida && !sessionValida) {
+      setToken(cookieValida);
+    }
+    if (sessionValida && !cookieValida) {
+      setAuthCookie(sessionValida);
     }
 
     setCargando(true);
